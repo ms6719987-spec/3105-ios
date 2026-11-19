@@ -240,7 +240,14 @@ private struct RoyalDashboardView: View {
             default: return false
             }
         }
-        let documents = (categoryPackages + matchingAssetFiles).compactMap { url -> ListedFile? in
+        // The bundled file is the canonical row. A previously imported copy
+        // must not create a second row with a different display name.
+        let bundledPackageIDs = Set(bundledHSFiles.compactMap { url -> UUID? in
+            guard let data = try? PatchProjectLibrary.readPackage(at: url),
+                  let summary = try? PatchPackageCodec.inspect(data) else { return nil }
+            return summary.packageID
+        })
+        let documents = (categoryPackages + matchingAssetFiles).map { url -> ListedFile in
             if let data = try? PatchProjectLibrary.readPackage(at: url),
                let summary = try? PatchPackageCodec.inspect(data),
                let existing = patchStore.items.first(where: { $0.id == summary.packageID && $0.project != nil }) {
@@ -249,19 +256,25 @@ private struct RoyalDashboardView: View {
             return ListedFile(id: url.path, name: cleanPatchName(url.deletingPathExtension().lastPathComponent))
         }
         let installed = patchStore.items.compactMap { item -> ListedFile? in
-            guard let project = item.project, item.canInspectContents else { return nil }
+            guard let project = item.project, item.canInspectContents,
+                  !bundledPackageIDs.contains(item.id) else { return nil }
             let paths = project.rules.map(\.relativePath) + project.directories.map(\.relativePath)
             guard paths.contains(where: { path in
                 path.split(separator: "/").contains(where: { component in
-                    let name = String(component).lowercased()
-                    return name == "assetindexer.\(assetId.lowercased())"
+                    String(component).lowercased() == "assetindexer.\(assetId.lowercased())"
                 })
             }) else { return nil }
             return ListedFile(id: "project-\(item.id)", name: cleanPatchName(project.name))
         }
-        var seen = Set<String>()
-        return (documents + installed).filter { seen.insert($0.name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)).inserted }
-            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        // De-duplicate by stable project ID, then by normalized visible name.
+        // Keep the bundled copy first to preserve its friendly display name.
+        var seenIDs = Set<String>()
+        var seenNames = Set<String>()
+        return (documents + installed).filter { file in
+            let nameKey = file.name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+                .replacingOccurrences(of: "[^a-z0-9]", with: "", options: .regularExpression)
+            return seenIDs.insert(file.id).inserted && seenNames.insert(nameKey).inserted
+        }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
     // The checked state is derived from a real, restorable transaction,
     // rather than from an in-memory selection that survives failed restores.
