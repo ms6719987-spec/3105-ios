@@ -451,7 +451,7 @@ private struct RoyalDashboardView: View {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity).padding(.vertical, 36)
                 } else {
-                    VStack(alignment: .leading, spacing: 10) {
+                    LazyVStack(alignment: .leading, spacing: 10, pinnedViews: []) {
                         ForEach(listedFiles) { file in
                             Button {
                                 activateListedFile(file)
@@ -484,14 +484,18 @@ private struct RoyalDashboardView: View {
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 13)
-                                .frame(maxWidth: .infinity, minHeight: 84)
+                                .frame(maxWidth: .infinity)
+                                .frame(minHeight: 84, alignment: .center)
+                                .fixedSize(horizontal: false, vertical: true)
                                 .background(Color.black, in: RoundedRectangle(cornerRadius: 24))
                                 .overlay(RoundedRectangle(cornerRadius: 24).stroke(outline.opacity(0.75), lineWidth: 1))
                             }
                             .buttonStyle(.plain)
                             .disabled(activationBusy)
+                            .fixedSize(horizontal: false, vertical: true)
                         }
                     }
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
                 Text("Nenhum patch nesta categoria.")
