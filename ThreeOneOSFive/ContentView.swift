@@ -451,7 +451,7 @@ private struct RoyalDashboardView: View {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity).padding(.vertical, 36)
                 } else {
-                    LazyVStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 10) {
                         ForEach(listedFiles) { file in
                             Button {
                                 activateListedFile(file)
