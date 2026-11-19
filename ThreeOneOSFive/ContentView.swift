@@ -199,7 +199,8 @@ private extension AppSection {
 // Custom dashboard presentation. Existing Installed functionality remains available.
 private struct RoyalDashboardView: View {
     @EnvironmentObject private var patchStore: PatchProjectStore
-    @State private var selectedCategory = "HS VIPS"
+    @State private var selectedCategory = "FF NORMAL"
+
     @State private var matchingAssetFiles: [URL] = []
     private struct ListedFile: Identifiable {
         let id: String
@@ -234,12 +235,15 @@ private struct RoyalDashboardView: View {
         return (documents + installed).filter { seen.insert($0.id).inserted }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
-    @State private var activeReceipts: [String: PatchTransactionReceipt] = [:]
+    @State private var selectedAssetPath: String? = nil
     @State private var activationBusy = false
     @State private var pendingActivationPackageID: UUID? = nil
+    @State private var bundledImportQueue: [URL] = []
+    @State private var bundledImportInProgress = false
     @State private var activationMessage: String? = nil
     @State private var showActivationMessage = false
     @State private var showSupport = false
+    @State private var showGameLaunchError = false
     private let red = Color(red: 1, green: 0.23, blue: 0.27)
     private let panel = Color(red: 0.065, green: 0.005, blue: 0.012)
     private let outline = Color(red: 0.33, green: 0.075, blue: 0.095)
@@ -263,7 +267,14 @@ private struct RoyalDashboardView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { hsVipsBottomButton }
         .preferredColorScheme(.dark)
+        .onAppear { prepareBundledImports() }
         .onChange(of: patchStore.isBusy) { busy in
+            if !busy && bundledImportInProgress {
+                bundledImportInProgress = false
+                patchStore.reload()
+                importNextBundledPackage()
+                return
+            }
             guard !busy, let packageID = pendingActivationPackageID else { return }
             pendingActivationPackageID = nil
             patchStore.reload()
@@ -279,6 +290,11 @@ private struct RoyalDashboardView: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text(activationMessage ?? "Não foi possível concluir a operação.")
+        }
+        .alert("Não foi possível abrir o jogo", isPresented: $showGameLaunchError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("O Free Fire não respondeu ao link de abertura. Verifique se o jogo está instalado e se esta versão aceita abertura por link externo.")
         }
         .alert("Suporte", isPresented: $showSupport) {
             Button("OK", role: .cancel) { }
@@ -362,7 +378,7 @@ private struct RoyalDashboardView: View {
             Button { showSupport = true } label: {
                 statusRow("checkmark.seal.fill", "Suporte", dispositivoSuportado ? "SUPORTADO" : "NÃO SUPORTADO", dispositivoSuportado ? .green : .red)
             }.buttonStyle(.plain)
-            statusRow("lock.shield.fill", "Licença", "Não configurada", .yellow)
+            statusRow("lock.shield.fill", "Version", "iOS \(UIDevice.current.systemVersion)", .green)
         }
         .padding(20)
         .background(panel, in: RoundedRectangle(cornerRadius: 28))
@@ -380,7 +396,7 @@ private struct RoyalDashboardView: View {
             Text(label).foregroundStyle(.gray)
             Spacer(minLength: 4)
             Text(value).font(.system(size: 15, weight: .heavy, design: .rounded))
-                .foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.7)
+                .foregroundStyle(label == "Suporte" ? tint : .white).lineLimit(1).minimumScaleFactor(0.7)
         }
     }
 
@@ -433,9 +449,9 @@ private struct RoyalDashboardView: View {
                                             .foregroundStyle(red)
                                     }
                                     Spacer(minLength: 0)
-                                    Image(systemName: activeReceipts[file.id] != nil ? "checkmark.circle.fill" : "circle")
+                                    Image(systemName: selectedAssetPath == file.id ? "checkmark.circle.fill" : "circle")
                                         .font(.system(size: 23, weight: .medium))
-                                        .foregroundStyle(activeReceipts[file.id] != nil ? red : Color.gray.opacity(0.6))
+                                        .foregroundStyle(selectedAssetPath == file.id ? red : Color.gray.opacity(0.6))
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 13)
@@ -461,32 +477,40 @@ private struct RoyalDashboardView: View {
         .onAppear { refreshAssetFiles() }
     }
 
+    // Load the HS VIPS files shipped inside the app into the patch library.
+    // They are imported only when not already present; activation remains a
+    // separate user action and only reports success after a real apply.
+    private func prepareBundledImports() {
+        guard bundledImportQueue.isEmpty, !bundledImportInProgress else { return }
+        guard let root = Bundle.main.resourceURL?.appendingPathComponent("BundledPatches", isDirectory: true),
+              let urls = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return }
+        bundledImportQueue = urls.filter { url in
+            guard url.pathExtension.lowercased() == "3105",
+                  let data = try? PatchProjectLibrary.readPackage(at: url),
+                  let summary = try? PatchPackageCodec.inspect(data) else { return false }
+            return !patchStore.items.contains(where: { $0.id == summary.packageID })
+        }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        importNextBundledPackage()
+    }
+
+    private func importNextBundledPackage() {
+        guard !patchStore.isBusy, !bundledImportInProgress else { return }
+        while !bundledImportQueue.isEmpty {
+            let url = bundledImportQueue.removeFirst()
+            guard let data = try? PatchProjectLibrary.readPackage(at: url),
+                  let summary = try? PatchPackageCodec.inspect(data),
+                  !patchStore.items.contains(where: { $0.id == summary.packageID }) else { continue }
+            bundledImportInProgress = true
+            patchStore.importPackage(at: url)
+            return
+        }
+    }
+
     private func activateListedFile(_ file: ListedFile) {
         guard !activationBusy else { return }
-        if let receipt = activeReceipts[file.id] {
-            activationBusy = true
-            Task.detached(priority: .userInitiated) {
-                do {
-                    let inspection = try DevicePatchService.inspectRestore(receipt: receipt)
-                    guard inspection.changedTargets.isEmpty else {
-                        throw NSError(domain: "Injetor", code: 1, userInfo: [NSLocalizedDescriptionKey: "Os arquivos de destino foram alterados. Restauração cancelada para evitar perda de dados."])
-                    }
-                    try DevicePatchService.restore(receipt: receipt)
-                    await MainActor.run {
-                        activeReceipts.removeValue(forKey: file.id)
-                        activationBusy = false
-                        patchStore.reload()
-                        activationMessage = "Arquivo desativado e estado anterior restaurado."
-                        showActivationMessage = true
-                    }
-                } catch {
-                    await MainActor.run {
-                        activationBusy = false
-                        activationMessage = "Não foi possível desativar: \(error.localizedDescription)"
-                        showActivationMessage = true
-                    }
-                }
-            }
+        if selectedAssetPath == file.id {
+            activationMessage = "O arquivo já foi aplicado. Para restaurar o estado anterior, use a opção de restauração do patch."
+            showActivationMessage = true
             return
         }
         // Import bundled and document packages through the same validated library
@@ -512,8 +536,6 @@ private struct RoyalDashboardView: View {
                 activationBusy = true
                 patchStore.importPackage(at: sourceURL)
             } catch {
-                activationBusy = false
-                pendingActivationPackageID = nil
                 activationMessage = "Arquivo inválido ou não suportado: \(error.localizedDescription)"
                 showActivationMessage = true
             }
@@ -531,9 +553,9 @@ private struct RoyalDashboardView: View {
                 let project = item.summary.schemaVersion >= 2 && item.canInspectContents
                     ? try PatchProjectLibrary.synchronizeWorkspace(item: item)
                     : baseProject
-                let receipt = try DevicePatchService.apply(project: project)
+                _ = try DevicePatchService.apply(project: project)
                 await MainActor.run {
-                    activeReceipts[file.id] = receipt
+                    selectedAssetPath = file.id
                     activationBusy = false
                     patchStore.reload()
                     activationMessage = "Patch aplicado com sucesso."
@@ -590,13 +612,26 @@ private struct RoyalDashboardView: View {
     }
 
     private func launchButton(_ title: String) -> some View {
-        Button { selectedCategory = title; refreshAssetFiles() } label: {
+        Button { openFreeFire(title) } label: {
             Label(title, systemImage: "play.fill")
                 .font(.system(size: 14, weight: .heavy, design: .rounded))
                 .foregroundStyle(.white).frame(maxWidth: .infinity).frame(height: 76)
                 .background(red.opacity(0.07), in: RoundedRectangle(cornerRadius: 22))
                 .overlay(RoundedRectangle(cornerRadius: 22).stroke(outline, lineWidth: 1.3))
         }.buttonStyle(.plain)
+    }
+
+    private func openFreeFire(_ title: String) {
+        // External game launching depends on a URL scheme supported by the
+        // installed game. Never treat an unsuccessful open as a successful launch.
+        let scheme = title == "FF MAX" ? "freefiremax://" : "freefire://"
+        guard let url = URL(string: scheme) else {
+            showGameLaunchError = true
+            return
+        }
+        UIApplication.shared.open(url, options: [:]) { success in
+            if !success { showGameLaunchError = true }
+        }
     }
 
     private func heading(_ symbol: String, _ title: String) -> some View {
