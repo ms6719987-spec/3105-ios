@@ -287,9 +287,9 @@ private struct RoyalDashboardView: View {
     @State private var activationMessage: String? = nil
     @State private var showActivationMessage = false
     @State private var showSupport = false
-    private let red = Color(red: 0.65, green: 0.25, blue: 1.0)
-    private let panel = Color(red: 0.055, green: 0.025, blue: 0.09)
-    private let outline = Color(red: 0.29, green: 0.13, blue: 0.43)
+    private let red = Color(red: 1, green: 0.23, blue: 0.27)
+    private let panel = Color(red: 0.065, green: 0.005, blue: 0.012)
+    private let outline = Color(red: 0.33, green: 0.075, blue: 0.095)
     private let categories: [(String, String)] = [
         ("FF NORMAL", "flame.fill"), ("FF MAX", "flame"),
         ("AP", "shield.lefthalf.filled")
@@ -297,7 +297,7 @@ private struct RoyalDashboardView: View {
 
     var body: some View {
         ZStack {
-            Color(red: 0.025, green: 0.012, blue: 0.045).ignoresSafeArea()
+            Color(red: 0.035, green: 0, blue: 0.007).ignoresSafeArea()
             ScrollView {
                 VStack(spacing: 22) {
                     statusPanel
@@ -308,7 +308,7 @@ private struct RoyalDashboardView: View {
                 .padding(.top, 20)
             }
         }
-
+        .safeAreaInset(edge: .bottom, spacing: 0) { hsVipsBottomButton }
         .preferredColorScheme(.dark)
         .onAppear { prepareBundledImports() }
         .onChange(of: patchStore.isBusy) { busy in
@@ -345,6 +345,30 @@ private struct RoyalDashboardView: View {
         } message: {
             Text("As informações de suporte não estão configuradas neste projeto.")
         }
+    }
+
+    private var hsVipsBottomButton: some View {
+        VStack(spacing: 3) {
+            Image(systemName: "flame.fill")
+                .font(.system(size: 14, weight: .bold))
+            Text("HS VIPS")
+                .font(.custom("Montserrat-Bold", size: 10))
+                .tracking(0.6)
+        }
+        .foregroundStyle(Color(red: 1.0, green: 0.32, blue: 0.37))
+        .frame(width: 98, height: 57)
+        .background(Color(red: 0.23, green: 0.19, blue: 0.20),
+                    in: RoundedRectangle(cornerRadius: 29, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 29, style: .continuous)
+                .stroke(Color(red: 0.35, green: 0.27, blue: 0.29), lineWidth: 1.5)
+        }
+        .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 5)
+        .padding(.bottom, 4)
+        .background(Color.clear)
+        .accessibilityLabel("HS VIPS")
     }
 
     private var iphoneModelName: String {
@@ -450,7 +474,7 @@ private struct RoyalDashboardView: View {
                                         .font(.system(size: 17, weight: .bold))
                                         .foregroundStyle(red)
                                         .frame(width: 50, height: 50)
-                                        .background(Color(red: 0.11, green: 0.035, blue: 0.18), in: RoundedRectangle(cornerRadius: 11))
+                                        .background(Color(red: 0.13, green: 0.015, blue: 0.025), in: RoundedRectangle(cornerRadius: 11))
                                         .overlay(RoundedRectangle(cornerRadius: 11).stroke(outline, lineWidth: 1))
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(file.name)
