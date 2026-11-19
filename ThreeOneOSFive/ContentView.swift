@@ -51,9 +51,6 @@ struct ContentView: View {
         }
         .tint(AppTheme.accent)
         .imageScale(.small)
-        .onChange(of: patchDraftCoordinator.request?.id) { requestID in
-            if requestID != nil { tabNavigation.select(AppSection.installed.rawValue) }
-        }
         .onChange(of: developerModeEnabled) { _ in
             tabNavigation.reconcileSelection(with: featureVisibility)
         }
@@ -214,7 +211,14 @@ private struct RoyalDashboardView: View {
             : "U6Zffc4YIR3DslNj3cXvYGAqz58~3D"
         // Show .3105 packages, not arbitrary asset files. Classify installed
         // projects by their declared target directory rather than package name.
-        let documents = (selectedCategory == "HS VIPS" ? [] : matchingAssetFiles).map { ListedFile(id: $0.path, name: $0.deletingPathExtension().lastPathComponent) }
+        let documents = (selectedCategory == "HS VIPS" ? [] : matchingAssetFiles).compactMap { url -> ListedFile? in
+            if let data = try? PatchProjectLibrary.readPackage(at: url),
+               let summary = try? PatchPackageCodec.inspect(data),
+               let existing = patchStore.items.first(where: { $0.id == summary.packageID && $0.project != nil }) {
+                return ListedFile(id: "project-\\(existing.id)", name: url.deletingPathExtension().lastPathComponent)
+            }
+            return ListedFile(id: url.path, name: url.deletingPathExtension().lastPathComponent)
+        }
         let installed = patchStore.items.compactMap { item -> ListedFile? in
             guard let project = item.project, item.canInspectContents else { return nil }
             let paths = project.rules.map(\.relativePath) + project.directories.map(\.relativePath)
@@ -232,6 +236,9 @@ private struct RoyalDashboardView: View {
     }
     @State private var selectedAssetPath: String? = nil
     @State private var activationBusy = false
+    @State private var pendingActivationPackageID: UUID? = nil
+    @State private var bundledImportQueue: [URL] = []
+    @State private var automaticImportInProgress = false
     @State private var activationMessage: String? = nil
     @State private var showActivationMessage = false
     @State private var showSupport = false
@@ -258,6 +265,29 @@ private struct RoyalDashboardView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { hsVipsBottomButton }
         .preferredColorScheme(.dark)
+        .onAppear { prepareBundledImports() }
+        .onChange(of: patchStore.isBusy) { busy in
+            if !busy && automaticImportInProgress {
+                automaticImportInProgress = false
+                patchStore.reload()
+                importNextBundledPackage()
+                return
+            }
+            if !busy && !bundledImportQueue.isEmpty {
+                importNextBundledPackage()
+                return
+            }
+            guard !busy, let packageID = pendingActivationPackageID else { return }
+            pendingActivationPackageID = nil
+            patchStore.reload()
+            guard let imported = patchStore.items.first(where: { $0.id == packageID && $0.project != nil }) else {
+                activationBusy = false
+                activationMessage = "Não foi possível validar ou importar este arquivo .3105. Verifique o formato e a senha, se houver."
+                showActivationMessage = true
+                return
+            }
+            activateListedFile(ListedFile(id: "project-\(imported.id)", name: imported.project?.name ?? "Patch"))
+        }
         .alert("Ativação do arquivo", isPresented: $showActivationMessage) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -274,37 +304,37 @@ private struct RoyalDashboardView: View {
         Button {
             selectedCategory = "HS VIPS"
         } label: {
-            VStack(spacing: 5) {
+            VStack(spacing: 3) {
                 Image(systemName: "flame.fill")
-                    .font(.system(size: 31, weight: .bold))
+                    .font(.system(size: 19, weight: .bold))
                 Text("HS VIPS")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .tracking(1.2)
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .tracking(0.6)
             }
             .foregroundStyle(Color(red: 1.0, green: 0.32, blue: 0.37))
-            .frame(width: 154, height: 90)
+            .frame(width: 98, height: 57)
             .background(Color(red: 0.23, green: 0.19, blue: 0.20),
-                        in: RoundedRectangle(cornerRadius: 45, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: 29, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 45, style: .continuous)
-                    .stroke(Color(red: 0.35, green: 0.27, blue: 0.29), lineWidth: 2)
+                RoundedRectangle(cornerRadius: 29, style: .continuous)
+                    .stroke(Color(red: 0.35, green: 0.27, blue: 0.29), lineWidth: 1.5)
             }
-            .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
-        .padding(.top, 12)
-        .padding(.bottom, 10)
+        .padding(.top, 5)
+        .padding(.bottom, 4)
         .background(Color.black.opacity(0.96))
     }
 
     private var iphoneModelName: String {
         var systemInfo = utsname()
         uname(&systemInfo)
-        let identifier = withUnsafePointer(to: &systemInfo.machine) {
-            $0.withMemoryRebound(to: CChar.self, capacity: MemoryLayout.size(ofValue: systemInfo.machine)) {
-                String(cString: $0)
-            }
+        let machine = systemInfo.machine
+        let identifier = withUnsafeBytes(of: machine) { bytes in
+            let chars = bytes.bindMemory(to: CChar.self)
+            return String(cString: chars.baseAddress!)
         }
         let models: [String: String] = [
             "iPhone10,1": "iPhone 8", "iPhone10,4": "iPhone 8",
@@ -405,12 +435,12 @@ private struct RoyalDashboardView: View {
                                         .overlay(RoundedRectangle(cornerRadius: 11).stroke(outline, lineWidth: 1))
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(file.name)
-                                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                            .font(.system(size: 15, weight: .semibold, design: .rounded))
                                             .foregroundStyle(.white)
                                             .fixedSize(horizontal: false, vertical: true)
                                             .multilineTextAlignment(.leading)
                                         Text(selectedCategory)
-                                            .font(.system(size: 9, weight: .heavy, design: .rounded))
+                                            .font(.system(size: 11, weight: .heavy, design: .rounded))
                                             .tracking(1)
                                             .foregroundStyle(red)
                                     }
@@ -419,9 +449,9 @@ private struct RoyalDashboardView: View {
                                         .font(.system(size: 23, weight: .medium))
                                         .foregroundStyle(selectedAssetPath == file.id ? red : Color.gray.opacity(0.6))
                                 }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 9)
-                                .frame(maxWidth: .infinity, minHeight: 64)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 13)
+                                .frame(maxWidth: .infinity, minHeight: 84)
                                 .background(Color.black, in: RoundedRectangle(cornerRadius: 24))
                                 .overlay(RoundedRectangle(cornerRadius: 24).stroke(outline.opacity(0.75), lineWidth: 1))
                             }
@@ -443,6 +473,43 @@ private struct RoyalDashboardView: View {
         .onAppear { refreshAssetFiles() }
     }
 
+    // Import the packages bundled with the IPA once, on startup, rather than
+    // waiting for the user to tap a file. Import is sequential because the store
+    // supports only one operation at a time. Invalid or locked packages are not
+    // marked as activated.
+    private func prepareBundledImports() {
+        guard bundledImportQueue.isEmpty, !automaticImportInProgress else { return }
+        var urls: [URL] = []
+        for folder in ["FF_NORMAL", "FF_MAX"] {
+            guard let root = Bundle.main.resourceURL?
+                .appendingPathComponent("BundledPatches", isDirectory: true)
+                .appendingPathComponent(folder, isDirectory: true),
+                let files = try? FileManager.default.contentsOfDirectory(
+                    at: root, includingPropertiesForKeys: nil) else { continue }
+            urls += files.filter { $0.pathExtension.lowercased() == "3105" }
+        }
+        bundledImportQueue = urls.filter { url in
+            guard let data = try? PatchProjectLibrary.readPackage(at: url),
+                  let summary = try? PatchPackageCodec.inspect(data) else { return false }
+            return !patchStore.items.contains(where: { $0.id == summary.packageID })
+        }
+        importNextBundledPackage()
+    }
+
+    private func importNextBundledPackage() {
+        guard !patchStore.isBusy, !automaticImportInProgress else { return }
+        while !bundledImportQueue.isEmpty {
+            let url = bundledImportQueue.removeFirst()
+            guard let data = try? PatchProjectLibrary.readPackage(at: url),
+                  let summary = try? PatchPackageCodec.inspect(data),
+                  !patchStore.items.contains(where: { $0.id == summary.packageID }) else { continue }
+            automaticImportInProgress = true
+            patchStore.importPackage(at: url)
+            return
+        }
+        refreshAssetFiles()
+    }
+
     private func activateListedFile(_ file: ListedFile) {
         guard !activationBusy else { return }
         if selectedAssetPath == file.id {
@@ -461,9 +528,21 @@ private struct RoyalDashboardView: View {
                 showActivationMessage = true
                 return
             }
-            patchStore.importPackage(at: sourceURL)
-            activationMessage = "Importação iniciada nesta tela. Após a validação, o arquivo aparecerá na lista e poderá ser ativado aqui, sem trocar de aba."
-            showActivationMessage = true
+            guard !patchStore.isBusy else {
+                activationMessage = "Aguarde a conclusão da operação anterior."
+                showActivationMessage = true
+                return
+            }
+            do {
+                let packageData = try PatchProjectLibrary.readPackage(at: sourceURL)
+                let summary = try PatchPackageCodec.inspect(packageData)
+                pendingActivationPackageID = summary.packageID
+                activationBusy = true
+                patchStore.importPackage(at: sourceURL)
+            } catch {
+                activationMessage = "Arquivo inválido ou não suportado: \(error.localizedDescription)"
+                showActivationMessage = true
+            }
             return
         }
         guard let item = patchStore.items.first(where: { "project-\($0.id)" == file.id }),
