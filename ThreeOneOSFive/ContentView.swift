@@ -204,10 +204,16 @@ private struct RoyalDashboardView: View {
     @State private var matchingAssetFiles: [URL] = []
     @State private var bundledHSFiles: [URL] = []
     private func cleanPatchName(_ name: String) -> String {
-        name.replacingOccurrences(of: "PESCOC╠ºO", with: "PESCOÇO")
+        let normalized = name
+            .replacingOccurrences(of: "PESCOC╠ºO", with: "PESCOÇO")
             .replacingOccurrences(of: "PESCOÇO", with: "PESCOÇO")
             .precomposedStringWithCanonicalMapping
-            .replacingOccurrences(of: #"(?i)\s*[-–—]?\s*FFMAX\s*[-–—]?\s*$"#, with: "", options: .regularExpression)
+        return normalized
+            .replacingOccurrences(
+                of: #"(?i)(?:\s*[-–—_/]\s*|\s+)(?:FFTH|FFMAX)\s*[-–—_]*\s*$"#,
+                with: "",
+                options: .regularExpression
+            )
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -257,6 +263,8 @@ private struct RoyalDashboardView: View {
         return (documents + installed).filter { seen.insert($0.name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)).inserted }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
+    // The checked state is derived from a real, restorable transaction,
+    // rather than from an in-memory selection that survives failed restores.
     @State private var selectedAssetPath: String? = nil
     @State private var activationBusy = false
     @State private var pendingActivationPackageID: UUID? = nil
@@ -469,9 +477,9 @@ private struct RoyalDashboardView: View {
                                             .foregroundStyle(red)
                                     }
                                     Spacer(minLength: 4)
-                                    Image(systemName: selectedAssetPath == file.id ? "checkmark.circle.fill" : "circle")
+                                    Image(systemName: isListedFileActive(file) ? "checkmark.circle.fill" : "circle")
                                         .font(.system(size: 23, weight: .medium))
-                                        .foregroundStyle(selectedAssetPath == file.id ? red : Color.gray.opacity(0.6))
+                                        .foregroundStyle(isListedFileActive(file) ? red : Color.gray.opacity(0.6))
                                         .fixedSize()
                                 }
                                 .padding(.horizontal, 14)
@@ -531,11 +539,47 @@ private struct RoyalDashboardView: View {
         }
     }
 
+    private func packageID(for file: ListedFile) -> UUID? {
+        if file.id.hasPrefix("project-") {
+            return UUID(uuidString: String(file.id.dropFirst("project-".count)))
+        }
+        guard let data = try? PatchProjectLibrary.readPackage(at: URL(fileURLWithPath: file.id)),
+              let summary = try? PatchPackageCodec.inspect(data) else { return nil }
+        return summary.packageID
+    }
+
+    private func isListedFileActive(_ file: ListedFile) -> Bool {
+        guard let id = packageID(for: file) else { return false }
+        return DevicePatchService.latestReceipt(projectID: id) != nil
+    }
+
+    private func deactivateListedFile(_ file: ListedFile, receipt: PatchTransactionReceipt) {
+        activationBusy = true
+        Task.detached(priority: .userInitiated) {
+            do {
+                try DevicePatchService.restore(receipt: receipt)
+                await MainActor.run {
+                    selectedAssetPath = nil
+                    activationBusy = false
+                    patchStore.reload()
+                    activationMessage = "Arquivo desativado e alterações restauradas."
+                    showActivationMessage = true
+                }
+            } catch {
+                await MainActor.run {
+                    activationBusy = false
+                    activationMessage = "Não foi possível desativar o arquivo: \(error.localizedDescription). O arquivo permanece marcado como ativo enquanto a restauração não for concluída."
+                    showActivationMessage = true
+                }
+            }
+        }
+    }
+
     private func activateListedFile(_ file: ListedFile) {
         guard !activationBusy else { return }
-        if selectedAssetPath == file.id {
-            activationMessage = "O arquivo já foi aplicado. Para restaurar o estado anterior, use a opção de restauração do patch."
-            showActivationMessage = true
+        if let id = packageID(for: file),
+           let receipt = DevicePatchService.latestReceipt(projectID: id) {
+            deactivateListedFile(file, receipt: receipt)
             return
         }
         // Import bundled and document packages through the same validated library
