@@ -210,16 +210,9 @@ enum PatchProjectLibrary {
             packageID: summary.packageID,
             fileManager: fileManager
         )
-        if let occupiedPath = overlappingTargetPath(
-            in: decoded.project,
-            excludingPackageID: summary.packageID,
-            fileManager: fileManager
-        ) {
-            if decoded.project.isPrivate, !authorCopy {
-                throw PatchPackageError.privateOperationFailed
-            }
-            throw PatchPackageError.targetOccupied(occupiedPath)
-        }
+        // Importing a package into the library does not activate it.
+        // Multiple alternative packages may legitimately reference the same
+        // target paths. Enforce target safety at application time instead.
         let previousData = try existingURL.map { try readPackage(at: $0) }
         let originURL = try originFileURL(
             packageID: summary.packageID,

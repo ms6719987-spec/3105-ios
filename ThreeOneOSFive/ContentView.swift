@@ -207,6 +207,8 @@ private struct RoyalDashboardView: View {
         name.replacingOccurrences(of: "PESCOC╠ºO", with: "PESCOÇO")
             .replacingOccurrences(of: "PESCOÇO", with: "PESCOÇO")
             .precomposedStringWithCanonicalMapping
+            .replacingOccurrences(of: #"(?i)\s*[-–—]?\s*FFMAX\s*[-–—]?\s*$"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private struct ListedFile: Identifiable {
@@ -260,6 +262,7 @@ private struct RoyalDashboardView: View {
     @State private var pendingActivationPackageID: UUID? = nil
     @State private var bundledImportQueue: [URL] = []
     @State private var bundledImportInProgress = false
+    @State private var bundledImportPrepared = false
     @State private var activationMessage: String? = nil
     @State private var showActivationMessage = false
     @State private var showSupport = false
@@ -294,12 +297,18 @@ private struct RoyalDashboardView: View {
                 importNextBundledPackage()
                 return
             }
+            // The store loads asynchronously on launch. Resume the bundled
+            // import queue when that initial load (or another task) completes.
+            if !busy && !bundledImportQueue.isEmpty {
+                importNextBundledPackage()
+                return
+            }
             guard !busy, let packageID = pendingActivationPackageID else { return }
             pendingActivationPackageID = nil
             patchStore.reload()
             guard let imported = patchStore.items.first(where: { $0.id == packageID && $0.project != nil }) else {
                 activationBusy = false
-                activationMessage = "Não foi possível validar ou importar este arquivo .3105. Verifique o formato e a senha, se houver."
+                activationMessage = "Não foi possível importar este arquivo .3105. Confira o erro apresentado pela biblioteca de patches."
                 showActivationMessage = true
                 return
             }
@@ -493,9 +502,10 @@ private struct RoyalDashboardView: View {
     // They are imported only when not already present; activation remains a
     // separate user action and only reports success after a real apply.
     private func prepareBundledImports() {
-        guard bundledImportQueue.isEmpty, !bundledImportInProgress else { return }
+        guard !bundledImportPrepared else { return }
         guard let root = Bundle.main.resourceURL?.appendingPathComponent("BundledPatches", isDirectory: true),
               let urls = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return }
+        bundledImportPrepared = true
         // Display bundled files immediately, even if their import or validation fails.
         bundledHSFiles = urls.filter { $0.pathExtension.lowercased() == "3105" }
             .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
