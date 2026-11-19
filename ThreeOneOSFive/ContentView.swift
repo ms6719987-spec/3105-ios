@@ -199,7 +199,7 @@ private extension AppSection {
 // Custom dashboard presentation. Existing Installed functionality remains available.
 private struct RoyalDashboardView: View {
     @EnvironmentObject private var patchStore: PatchProjectStore
-    @State private var selectedCategory = "FF NORMAL"
+    @State private var selectedCategory = "HS VIPS"
     @State private var matchingAssetFiles: [URL] = []
     private struct ListedFile: Identifiable {
         let id: String
@@ -215,7 +215,7 @@ private struct RoyalDashboardView: View {
             if let data = try? PatchProjectLibrary.readPackage(at: url),
                let summary = try? PatchPackageCodec.inspect(data),
                let existing = patchStore.items.first(where: { $0.id == summary.packageID && $0.project != nil }) {
-                return ListedFile(id: "project-\\(existing.id)", name: url.deletingPathExtension().lastPathComponent)
+                return ListedFile(id: "project-\(existing.id)", name: url.deletingPathExtension().lastPathComponent)
             }
             return ListedFile(id: url.path, name: url.deletingPathExtension().lastPathComponent)
         }
@@ -234,11 +234,9 @@ private struct RoyalDashboardView: View {
         return (documents + installed).filter { seen.insert($0.id).inserted }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
-    @State private var selectedAssetPath: String? = nil
+    @State private var activeReceipts: [String: PatchTransactionReceipt] = [:]
     @State private var activationBusy = false
     @State private var pendingActivationPackageID: UUID? = nil
-    @State private var bundledImportQueue: [URL] = []
-    @State private var automaticImportInProgress = false
     @State private var activationMessage: String? = nil
     @State private var showActivationMessage = false
     @State private var showSupport = false
@@ -265,18 +263,7 @@ private struct RoyalDashboardView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { hsVipsBottomButton }
         .preferredColorScheme(.dark)
-        .onAppear { prepareBundledImports() }
         .onChange(of: patchStore.isBusy) { busy in
-            if !busy && automaticImportInProgress {
-                automaticImportInProgress = false
-                patchStore.reload()
-                importNextBundledPackage()
-                return
-            }
-            if !busy && !bundledImportQueue.isEmpty {
-                importNextBundledPackage()
-                return
-            }
             guard !busy, let packageID = pendingActivationPackageID else { return }
             pendingActivationPackageID = nil
             patchStore.reload()
@@ -303,6 +290,7 @@ private struct RoyalDashboardView: View {
     private var hsVipsBottomButton: some View {
         Button {
             selectedCategory = "HS VIPS"
+            patchStore.reload()
         } label: {
             VStack(spacing: 3) {
                 Image(systemName: "flame.fill")
@@ -325,7 +313,7 @@ private struct RoyalDashboardView: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 5)
         .padding(.bottom, 4)
-        .background(Color.black.opacity(0.96))
+        .background(Color.clear)
     }
 
     private var iphoneModelName: String {
@@ -416,7 +404,7 @@ private struct RoyalDashboardView: View {
             }
             if selectedCategory == "FF NORMAL" || selectedCategory == "FF MAX" || selectedCategory == "HS VIPS" {
                 if listedFiles.isEmpty {
-                    Text(selectedCategory == "HS VIPS" ? "Nenhum pacote instalado encontrado." : "Nenhum pacote .3105 encontrado para \(selectedCategory). Importe um patch .3105 com um caminho de destino compatível ou adicione-o à pasta correspondente no app Arquivos.")
+                    Text(selectedCategory == "HS VIPS" ? "Nenhum pacote instalado encontrado." : "Nenhum arquivo .3105 disponível para \(selectedCategory).")
                         .foregroundStyle(.gray).font(.system(size: 13))
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity).padding(.vertical, 36)
@@ -445,9 +433,9 @@ private struct RoyalDashboardView: View {
                                             .foregroundStyle(red)
                                     }
                                     Spacer(minLength: 0)
-                                    Image(systemName: selectedAssetPath == file.id ? "checkmark.circle.fill" : "circle")
+                                    Image(systemName: activeReceipts[file.id] != nil ? "checkmark.circle.fill" : "circle")
                                         .font(.system(size: 23, weight: .medium))
-                                        .foregroundStyle(selectedAssetPath == file.id ? red : Color.gray.opacity(0.6))
+                                        .foregroundStyle(activeReceipts[file.id] != nil ? red : Color.gray.opacity(0.6))
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 13)
@@ -473,48 +461,32 @@ private struct RoyalDashboardView: View {
         .onAppear { refreshAssetFiles() }
     }
 
-    // Import the packages bundled with the IPA once, on startup, rather than
-    // waiting for the user to tap a file. Import is sequential because the store
-    // supports only one operation at a time. Invalid or locked packages are not
-    // marked as activated.
-    private func prepareBundledImports() {
-        guard bundledImportQueue.isEmpty, !automaticImportInProgress else { return }
-        var urls: [URL] = []
-        for folder in ["FF_NORMAL", "FF_MAX"] {
-            guard let root = Bundle.main.resourceURL?
-                .appendingPathComponent("BundledPatches", isDirectory: true)
-                .appendingPathComponent(folder, isDirectory: true),
-                let files = try? FileManager.default.contentsOfDirectory(
-                    at: root, includingPropertiesForKeys: nil) else { continue }
-            urls += files.filter { $0.pathExtension.lowercased() == "3105" }
-        }
-        bundledImportQueue = urls.filter { url in
-            guard let data = try? PatchProjectLibrary.readPackage(at: url),
-                  let summary = try? PatchPackageCodec.inspect(data) else { return false }
-            return !patchStore.items.contains(where: { $0.id == summary.packageID })
-        }
-        importNextBundledPackage()
-    }
-
-    private func importNextBundledPackage() {
-        guard !patchStore.isBusy, !automaticImportInProgress else { return }
-        while !bundledImportQueue.isEmpty {
-            let url = bundledImportQueue.removeFirst()
-            guard let data = try? PatchProjectLibrary.readPackage(at: url),
-                  let summary = try? PatchPackageCodec.inspect(data),
-                  !patchStore.items.contains(where: { $0.id == summary.packageID }) else { continue }
-            automaticImportInProgress = true
-            patchStore.importPackage(at: url)
-            return
-        }
-        refreshAssetFiles()
-    }
-
     private func activateListedFile(_ file: ListedFile) {
         guard !activationBusy else { return }
-        if selectedAssetPath == file.id {
-            activationMessage = "O arquivo já foi aplicado. Para restaurar o estado anterior, use a opção de restauração do patch."
-            showActivationMessage = true
+        if let receipt = activeReceipts[file.id] {
+            activationBusy = true
+            Task.detached(priority: .userInitiated) {
+                do {
+                    let inspection = try DevicePatchService.inspectRestore(receipt: receipt)
+                    guard inspection.changedTargets.isEmpty else {
+                        throw NSError(domain: "Injetor", code: 1, userInfo: [NSLocalizedDescriptionKey: "Os arquivos de destino foram alterados. Restauração cancelada para evitar perda de dados."])
+                    }
+                    try DevicePatchService.restore(receipt: receipt)
+                    await MainActor.run {
+                        activeReceipts.removeValue(forKey: file.id)
+                        activationBusy = false
+                        patchStore.reload()
+                        activationMessage = "Arquivo desativado e estado anterior restaurado."
+                        showActivationMessage = true
+                    }
+                } catch {
+                    await MainActor.run {
+                        activationBusy = false
+                        activationMessage = "Não foi possível desativar: \(error.localizedDescription)"
+                        showActivationMessage = true
+                    }
+                }
+            }
             return
         }
         // Import bundled and document packages through the same validated library
@@ -540,6 +512,8 @@ private struct RoyalDashboardView: View {
                 activationBusy = true
                 patchStore.importPackage(at: sourceURL)
             } catch {
+                activationBusy = false
+                pendingActivationPackageID = nil
                 activationMessage = "Arquivo inválido ou não suportado: \(error.localizedDescription)"
                 showActivationMessage = true
             }
@@ -557,9 +531,9 @@ private struct RoyalDashboardView: View {
                 let project = item.summary.schemaVersion >= 2 && item.canInspectContents
                     ? try PatchProjectLibrary.synchronizeWorkspace(item: item)
                     : baseProject
-                _ = try DevicePatchService.apply(project: project)
+                let receipt = try DevicePatchService.apply(project: project)
                 await MainActor.run {
-                    selectedAssetPath = file.id
+                    activeReceipts[file.id] = receipt
                     activationBusy = false
                     patchStore.reload()
                     activationMessage = "Patch aplicado com sucesso."
@@ -598,17 +572,6 @@ private struct RoyalDashboardView: View {
             found.append(url)
             if found.count >= 200 { break }
         }
-        // Files included in the IPA are read-only bundle resources.
-        // They are listed in addition to imported files in Documents.
-        let bundledFolder = selectedCategory == "FF MAX" ? "FF_MAX" : "FF_NORMAL"
-        if let root = Bundle.main.resourceURL?
-            .appendingPathComponent("BundledPatches", isDirectory: true)
-            .appendingPathComponent(bundledFolder, isDirectory: true),
-           let bundled = try? FileManager.default.contentsOfDirectory(
-                at: root, includingPropertiesForKeys: [.isRegularFileKey],
-                options: [.skipsHiddenFiles]) {
-            found.append(contentsOf: bundled.filter { $0.pathExtension.lowercased() == "3105" })
-        }
         matchingAssetFiles = Array(Set(found)).sorted { $0.lastPathComponent < $1.lastPathComponent }
 
     }
@@ -627,7 +590,7 @@ private struct RoyalDashboardView: View {
     }
 
     private func launchButton(_ title: String) -> some View {
-        Button { selectedCategory = title; selectedAssetPath = nil; refreshAssetFiles() } label: {
+        Button { selectedCategory = title; refreshAssetFiles() } label: {
             Label(title, systemImage: "play.fill")
                 .font(.system(size: 14, weight: .heavy, design: .rounded))
                 .foregroundStyle(.white).frame(maxWidth: .infinity).frame(height: 76)
