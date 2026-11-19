@@ -202,6 +202,7 @@ private struct RoyalDashboardView: View {
     @State private var selectedCategory = "FF NORMAL"
 
     @State private var matchingAssetFiles: [URL] = []
+    @State private var bundledHSFiles: [URL] = []
     private struct ListedFile: Identifiable {
         let id: String
         let name: String
@@ -212,7 +213,7 @@ private struct RoyalDashboardView: View {
             : "U6Zffc4YIR3DslNj3cXvYGAqz58~3D"
         // Show .3105 packages, not arbitrary asset files. Classify installed
         // projects by their declared target directory rather than package name.
-        let documents = (selectedCategory == "HS VIPS" ? [] : matchingAssetFiles).compactMap { url -> ListedFile? in
+        let documents = (selectedCategory == "HS VIPS" ? bundledHSFiles : matchingAssetFiles).compactMap { url -> ListedFile? in
             if let data = try? PatchProjectLibrary.readPackage(at: url),
                let summary = try? PatchPackageCodec.inspect(data),
                let existing = patchStore.items.first(where: { $0.id == summary.packageID && $0.project != nil }) {
@@ -232,7 +233,7 @@ private struct RoyalDashboardView: View {
             return ListedFile(id: "project-\(item.id)", name: project.name)
         }
         var seen = Set<String>()
-        return (documents + installed).filter { seen.insert($0.id).inserted }
+        return (documents + installed).filter { seen.insert($0.name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)).inserted }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
     @State private var selectedAssetPath: String? = nil
@@ -243,7 +244,6 @@ private struct RoyalDashboardView: View {
     @State private var activationMessage: String? = nil
     @State private var showActivationMessage = false
     @State private var showSupport = false
-    @State private var showGameLaunchError = false
     private let red = Color(red: 1, green: 0.23, blue: 0.27)
     private let panel = Color(red: 0.065, green: 0.005, blue: 0.012)
     private let outline = Color(red: 0.33, green: 0.075, blue: 0.095)
@@ -290,11 +290,6 @@ private struct RoyalDashboardView: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text(activationMessage ?? "Não foi possível concluir a operação.")
-        }
-        .alert("Não foi possível abrir o jogo", isPresented: $showGameLaunchError) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text("O Free Fire não respondeu ao link de abertura. Verifique se o jogo está instalado e se esta versão aceita abertura por link externo.")
         }
         .alert("Suporte", isPresented: $showSupport) {
             Button("OK", role: .cancel) { }
@@ -484,6 +479,9 @@ private struct RoyalDashboardView: View {
         guard bundledImportQueue.isEmpty, !bundledImportInProgress else { return }
         guard let root = Bundle.main.resourceURL?.appendingPathComponent("BundledPatches", isDirectory: true),
               let urls = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return }
+        // Display bundled files immediately, even if their import or validation fails.
+        bundledHSFiles = urls.filter { $0.pathExtension.lowercased() == "3105" }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
         bundledImportQueue = urls.filter { url in
             guard url.pathExtension.lowercased() == "3105",
                   let data = try? PatchProjectLibrary.readPackage(at: url),
@@ -622,16 +620,11 @@ private struct RoyalDashboardView: View {
     }
 
     private func openFreeFire(_ title: String) {
-        // External game launching depends on a URL scheme supported by the
-        // installed game. Never treat an unsuccessful open as a successful launch.
+        // Attempt direct launch without an in-app confirmation or error alert.
+        // iOS may still display system-controlled prompts.
         let scheme = title == "FF MAX" ? "freefiremax://" : "freefire://"
-        guard let url = URL(string: scheme) else {
-            showGameLaunchError = true
-            return
-        }
-        UIApplication.shared.open(url, options: [:]) { success in
-            if !success { showGameLaunchError = true }
-        }
+        guard let url = URL(string: scheme) else { return }
+        UIApplication.shared.open(url, options: [:], completionHandler: nil)
     }
 
     private func heading(_ symbol: String, _ title: String) -> some View {
