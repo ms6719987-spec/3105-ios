@@ -451,7 +451,7 @@ private struct RoyalDashboardView: View {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity).padding(.vertical, 36)
                 } else {
-                    LazyVStack(alignment: .leading, spacing: 10, pinnedViews: []) {
+                    VStack(alignment: .leading, spacing: 10) {
                         ForEach(listedFiles) { file in
                             Button {
                                 activateListedFile(file)
@@ -492,10 +492,8 @@ private struct RoyalDashboardView: View {
                             }
                             .buttonStyle(.plain)
                             .disabled(activationBusy)
-                            .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
                 Text("Nenhum patch nesta categoria.")
