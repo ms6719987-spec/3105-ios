@@ -203,6 +203,12 @@ private struct RoyalDashboardView: View {
 
     @State private var matchingAssetFiles: [URL] = []
     @State private var bundledHSFiles: [URL] = []
+    private func cleanPatchName(_ name: String) -> String {
+        name.replacingOccurrences(of: "PESCOC╠ºO", with: "PESCOÇO")
+            .replacingOccurrences(of: "PESCOÇO", with: "PESCOÇO")
+            .precomposedStringWithCanonicalMapping
+    }
+
     private struct ListedFile: Identifiable {
         let id: String
         let name: String
@@ -213,24 +219,37 @@ private struct RoyalDashboardView: View {
             : "U6Zffc4YIR3DslNj3cXvYGAqz58~3D"
         // Show .3105 packages, not arbitrary asset files. Classify installed
         // projects by their declared target directory rather than package name.
-        let documents = (selectedCategory == "HS VIPS" ? bundledHSFiles : matchingAssetFiles).compactMap { url -> ListedFile? in
+        // Bundled .3105 files live at the root of BundledPatches, not in
+        // Documents/assetindexer.*. Display them immediately in both game tabs.
+        // Packages explicitly named FFMAX belong to FF MAX; the others to FF NORMAL.
+        let categoryPackages = bundledHSFiles.filter { url in
+            let isMax = url.deletingPathExtension().lastPathComponent
+                .localizedCaseInsensitiveContains("FFMAX")
+            switch selectedCategory {
+            case "FF MAX": return isMax
+            case "FF NORMAL": return !isMax
+            case "HS VIPS": return false
+            default: return false
+            }
+        }
+        let documents = (categoryPackages + matchingAssetFiles).compactMap { url -> ListedFile? in
             if let data = try? PatchProjectLibrary.readPackage(at: url),
                let summary = try? PatchPackageCodec.inspect(data),
                let existing = patchStore.items.first(where: { $0.id == summary.packageID && $0.project != nil }) {
-                return ListedFile(id: "project-\(existing.id)", name: url.deletingPathExtension().lastPathComponent)
+                return ListedFile(id: "project-\(existing.id)", name: cleanPatchName(url.deletingPathExtension().lastPathComponent))
             }
-            return ListedFile(id: url.path, name: url.deletingPathExtension().lastPathComponent)
+            return ListedFile(id: url.path, name: cleanPatchName(url.deletingPathExtension().lastPathComponent))
         }
         let installed = patchStore.items.compactMap { item -> ListedFile? in
             guard let project = item.project, item.canInspectContents else { return nil }
             let paths = project.rules.map(\.relativePath) + project.directories.map(\.relativePath)
-            guard selectedCategory == "HS VIPS" || paths.contains(where: { path in
+            guard paths.contains(where: { path in
                 path.split(separator: "/").contains(where: { component in
                     let name = String(component).lowercased()
                     return name == "assetindexer.\(assetId.lowercased())"
                 })
             }) else { return nil }
-            return ListedFile(id: "project-\(item.id)", name: project.name)
+            return ListedFile(id: "project-\(item.id)", name: cleanPatchName(project.name))
         }
         var seen = Set<String>()
         return (documents + installed).filter { seen.insert($0.name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)).inserted }
@@ -299,32 +318,27 @@ private struct RoyalDashboardView: View {
     }
 
     private var hsVipsBottomButton: some View {
-        Button {
-            selectedCategory = "HS VIPS"
-            patchStore.reload()
-        } label: {
-            VStack(spacing: 3) {
-                Image(systemName: "flame.fill")
-                    .font(.system(size: 19, weight: .bold))
-                Text("HS VIPS")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .tracking(0.6)
-            }
-            .foregroundStyle(Color(red: 1.0, green: 0.32, blue: 0.37))
-            .frame(width: 98, height: 57)
-            .background(Color(red: 0.23, green: 0.19, blue: 0.20),
-                        in: RoundedRectangle(cornerRadius: 29, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 29, style: .continuous)
-                    .stroke(Color(red: 0.35, green: 0.27, blue: 0.29), lineWidth: 1.5)
-            }
-            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+        VStack(spacing: 3) {
+            Image(systemName: "flame.fill")
+                .font(.system(size: 19, weight: .bold))
+            Text("HS VIPS")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(0.6)
         }
-        .buttonStyle(.plain)
+        .foregroundStyle(Color(red: 1.0, green: 0.32, blue: 0.37))
+        .frame(width: 98, height: 57)
+        .background(Color(red: 0.23, green: 0.19, blue: 0.20),
+                    in: RoundedRectangle(cornerRadius: 29, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 29, style: .continuous)
+                .stroke(Color(red: 0.35, green: 0.27, blue: 0.29), lineWidth: 1.5)
+        }
+        .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
         .frame(maxWidth: .infinity)
         .padding(.top, 5)
         .padding(.bottom, 4)
         .background(Color.clear)
+        .accessibilityLabel("HS VIPS")
     }
 
     private var iphoneModelName: String {
@@ -413,9 +427,9 @@ private struct RoyalDashboardView: View {
                     }.buttonStyle(.plain)
                 }
             }
-            if selectedCategory == "FF NORMAL" || selectedCategory == "FF MAX" || selectedCategory == "HS VIPS" {
+            if selectedCategory == "FF NORMAL" || selectedCategory == "FF MAX" {
                 if listedFiles.isEmpty {
-                    Text(selectedCategory == "HS VIPS" ? "Nenhum pacote instalado encontrado." : "Nenhum arquivo .3105 disponível para \(selectedCategory).")
+                    Text("Nenhum arquivo .3105 disponível para \(selectedCategory).")
                         .foregroundStyle(.gray).font(.system(size: 13))
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity).padding(.vertical, 36)
@@ -436,17 +450,20 @@ private struct RoyalDashboardView: View {
                                         Text(file.name)
                                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                                             .foregroundStyle(.white)
+                                            .lineLimit(nil)
                                             .fixedSize(horizontal: false, vertical: true)
                                             .multilineTextAlignment(.leading)
+                                            .layoutPriority(1)
                                         Text(selectedCategory)
                                             .font(.system(size: 11, weight: .heavy, design: .rounded))
                                             .tracking(1)
                                             .foregroundStyle(red)
                                     }
-                                    Spacer(minLength: 0)
+                                    Spacer(minLength: 4)
                                     Image(systemName: selectedAssetPath == file.id ? "checkmark.circle.fill" : "circle")
                                         .font(.system(size: 23, weight: .medium))
                                         .foregroundStyle(selectedAssetPath == file.id ? red : Color.gray.opacity(0.6))
+                                        .fixedSize()
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 13)
