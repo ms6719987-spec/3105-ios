@@ -301,9 +301,8 @@ private struct RoyalDashboardView: View {
     private var iphoneModelName: String {
         var systemInfo = utsname()
         uname(&systemInfo)
-        let machineSize = MemoryLayout.size(ofValue: systemInfo.machine)
-        let identifier = withUnsafePointer(to: &systemInfo.machine) { pointer in
-            pointer.withMemoryRebound(to: CChar.self, capacity: machineSize) {
+        let identifier = withUnsafePointer(to: &systemInfo.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: MemoryLayout.size(ofValue: systemInfo.machine)) {
                 String(cString: $0)
             }
         }
