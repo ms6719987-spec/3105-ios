@@ -6,6 +6,7 @@ struct RoyalDashboardView: View {
     @State private var selectedCategory = "FF NORMAL"
     @State private var workingIDs = Set<UUID>()
     @State private var actionError: String?
+    @State private var actionSuccess: String?
 
     private let red = Color(red: 1, green: 0.23, blue: 0.27)
     private let panel = Color(red: 0.065, green: 0.005, blue: 0.012)
@@ -57,6 +58,14 @@ struct RoyalDashboardView: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
+            .alert("Arquivo", isPresented: Binding(
+                get: { actionSuccess != nil },
+                set: { if !$0 { actionSuccess = nil } }
+            )) {
+                Button("OK", role: .cancel) { actionSuccess = nil }
+            } message: {
+                Text(actionSuccess ?? "")
+            }
             .patchStorePresentation(store)
             .alert("Arquivo", isPresented: Binding(
                 get: { actionError != nil },
@@ -219,9 +228,16 @@ struct RoyalDashboardView: View {
         workingIDs.insert(item.id)
         let activeReceipt = DevicePatchService.latestReceipt(projectID: item.id)
         Task.detached(priority: .userInitiated) {
+            let started = ProcessInfo.processInfo.systemUptime
+            func report(_ stage: String) {
+                let elapsed = ProcessInfo.processInfo.systemUptime - started
+                NSLog("[Injetor] %@ em %.3f s (%@)", stage, elapsed, item.id.uuidString)
+            }
             do {
                 if let receipt = activeReceipt {
+                    report("Iniciando restauração")
                     try DevicePatchService.restore(receipt: receipt, allowChangedTargets: false)
+                    report("Restauração concluída")
                 } else {
                     guard let baseProject = item.project else {
                         throw NSError(domain: "Injetor", code: 1, userInfo: [NSLocalizedDescriptionKey: "Arquivo indisponível."])
@@ -240,16 +256,25 @@ struct RoyalDashboardView: View {
                     } else {
                         hasWorkspace = false
                     }
+                    // Reutiliza o projeto importado diretamente quando não existe
+                    // workspace editado; sincronização só ocorre se necessária.
+                    report(hasWorkspace ? "Sincronizando workspace editado" : "Aplicação direta do pacote")
                     let project = hasWorkspace
                         ? try PatchProjectLibrary.synchronizeWorkspace(item: item)
                         : baseProject
+                    report("Iniciando escrita dos arquivos")
                     _ = try DevicePatchService.apply(project: project)
+                    report("Aplicação concluída")
                 }
                 await MainActor.run {
                     workingIDs.remove(item.id)
                     store.reload()
+                    actionSuccess = activeReceipt == nil
+                        ? "Arquivo aplicado com sucesso!"
+                        : "Aplicação desfeita com sucesso!"
                 }
             } catch {
+                report("Operação falhou: \(error.localizedDescription)")
                 await MainActor.run {
                     workingIDs.remove(item.id)
                     actionError = error.localizedDescription
