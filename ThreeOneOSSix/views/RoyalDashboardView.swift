@@ -4,7 +4,8 @@ import UIKit
 struct RoyalDashboardView: View {
     @EnvironmentObject private var store: PatchProjectStore
     @State private var selectedCategory = "FF NORMAL"
-    @State private var showLibrary = false
+    @State private var workingIDs = Set<UUID>()
+    @State private var actionError: String?
 
     private let red = Color(red: 1, green: 0.23, blue: 0.27)
     private let panel = Color(red: 0.065, green: 0.005, blue: 0.012)
@@ -50,7 +51,15 @@ struct RoyalDashboardView: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(isPresented: $showLibrary) { PatchProjectsView() }
+            .patchStorePresentation(store)
+            .alert("Arquivo", isPresented: Binding(
+                get: { actionError != nil },
+                set: { if !$0 { actionError = nil } }
+            )) {
+                Button("OK", role: .cancel) { actionError = nil }
+            } message: {
+                Text(actionError ?? "")
+            }
         }
         .preferredColorScheme(.dark)
     }
@@ -129,7 +138,7 @@ struct RoyalDashboardView: View {
             } else {
                 VStack(spacing: 10) {
                     ForEach(listedFiles) { item in
-                        Button { showLibrary = true } label: {
+                        Button { toggleFile(item) } label: {
                             HStack(spacing: 9) {
                                 Image(systemName: "flame.fill")
                                     .font(.system(size: 17, weight: .bold)).foregroundStyle(red)
@@ -143,8 +152,13 @@ struct RoyalDashboardView: View {
                                     Text(selectedCategory).font(font(11)).tracking(1).foregroundStyle(red)
                                 }
                                 Spacer(minLength: 4)
-                                Image(systemName: "circle").font(.system(size: 19))
-                                    .foregroundStyle(.gray.opacity(0.6))
+                                if workingIDs.contains(item.id) {
+                                    ProgressView().tint(red)
+                                } else {
+                                    Image(systemName: isFileActive(item) ? "checkmark.circle.fill" : "circle")
+                                        .font(.system(size: 22))
+                                        .foregroundStyle(isFileActive(item) ? red : .gray.opacity(0.6))
+                                }
                             }
                             .padding(.horizontal, 14).padding(.vertical, 10)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -152,7 +166,46 @@ struct RoyalDashboardView: View {
                             .background(.black, in: RoundedRectangle(cornerRadius: 24))
                             .overlay(RoundedRectangle(cornerRadius: 24).stroke(outline.opacity(0.75)))
                         }.buttonStyle(.plain)
+                        .disabled(workingIDs.contains(item.id))
                     }
+                }
+            }
+        }
+    }
+
+    private func isFileActive(_ item: PatchLibraryItem) -> Bool {
+        DevicePatchService.latestReceipt(projectID: item.id) != nil
+    }
+
+    private func toggleFile(_ item: PatchLibraryItem) {
+        guard !workingIDs.contains(item.id) else { return }
+        if item.isLocked {
+            store.requestUnlock(for: item)
+            return
+        }
+        workingIDs.insert(item.id)
+        let activeReceipt = DevicePatchService.latestReceipt(projectID: item.id)
+        Task.detached(priority: .userInitiated) {
+            do {
+                if let receipt = activeReceipt {
+                    try DevicePatchService.restore(receipt: receipt, allowChangedTargets: false)
+                } else {
+                    guard let baseProject = item.project else {
+                        throw NSError(domain: "Injetor", code: 1, userInfo: [NSLocalizedDescriptionKey: "Arquivo indisponível."])
+                    }
+                    let project = item.summary.schemaVersion >= 2 && item.canInspectContents
+                        ? try PatchProjectLibrary.synchronizeWorkspace(item: item)
+                        : baseProject
+                    _ = try DevicePatchService.apply(project: project)
+                }
+                await MainActor.run {
+                    workingIDs.remove(item.id)
+                    store.reload()
+                }
+            } catch {
+                await MainActor.run {
+                    workingIDs.remove(item.id)
+                    actionError = error.localizedDescription
                 }
             }
         }
