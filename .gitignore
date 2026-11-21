@@ -33,10 +33,10 @@ DerivedData/
 # Local QA artifacts and internal working notes
 /*.png
 /tasks/
-/Tests/
-/.github/
 /CONTRIBUTING.md
 /SECURITY.md
+/.deja/
+dist/backups/
 
 # Temporary files
 *.tmp
