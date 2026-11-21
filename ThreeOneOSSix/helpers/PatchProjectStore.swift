@@ -38,10 +38,24 @@ final class PatchProjectStore: ObservableObject {
     private var pendingUnlock: PendingUnlock?
 
     init() {
+        Self.installBundledPatchesIfNeeded()
         isBusy = true
         Task.detached(priority: .userInitiated) { [weak self] in
             let loadedItems = PatchProjectLibrary.load()
             await self?.finishInitialLoad(loadedItems)
+        }
+    }
+
+    // Bundled .3105 files are copied only if absent; existing imports remain intact.
+    private static func installBundledPatchesIfNeeded() {
+        guard let bundledURL = Bundle.main.resourceURL?.appendingPathComponent("BundledPatches", isDirectory: true),
+              let files = try? FileManager.default.contentsOfDirectory(at: bundledURL, includingPropertiesForKeys: nil),
+              let destination = try? PatchProjectLibrary.packageRootURL() else { return }
+        for file in files where file.pathExtension.lowercased() == "3105" {
+            let target = destination.appendingPathComponent(file.lastPathComponent)
+            if !FileManager.default.fileExists(atPath: target.path) {
+                try? FileManager.default.copyItem(at: file, to: target)
+            }
         }
     }
 

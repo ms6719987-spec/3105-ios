@@ -27,6 +27,7 @@ struct PatchProjectsView: View {
     @State private var showWallpaperImporter = false
     @State private var showCleaner = false
     @State private var searchText = ""
+    @State private var ffFilter: FFPackageFilter = .all
     @State private var wallpaperPackages: [WallpaperStagedPackage] = []
     @State private var wallpaperImportFeedback: WallpaperImportFeedback?
     @State private var wallpaperPendingDeletion: WallpaperStagedPackage?
@@ -36,10 +37,28 @@ struct PatchProjectsView: View {
     let onOpenSettings: () -> Void
     let onOpenLogs: () -> Void
 
+    private enum FFPackageFilter: String, CaseIterable {
+        case all = "TODOS"
+        case normal = "FF NORMAL"
+        case max = "FF MAX"
+    }
+
+    private func isFFMax(_ item: PatchLibraryItem) -> Bool {
+        let name = (item.project?.name ?? item.packageURL.deletingPathExtension().lastPathComponent).uppercased()
+        return name.contains("FFMAX") || name.contains("FF MAX")
+    }
+
     private var filteredItems: [PatchLibraryItem] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return store.items }
-        return store.items.filter { item in
+        let categoryItems = store.items.filter { item in
+            switch ffFilter {
+            case .all: return true
+            case .normal: return !isFFMax(item)
+            case .max: return isFFMax(item)
+            }
+        }
+        guard !query.isEmpty else { return categoryItems }
+        return categoryItems.filter { item in
             if item.packageURL.lastPathComponent.localizedCaseInsensitiveContains(query) {
                 return true
             }
@@ -99,7 +118,15 @@ struct PatchProjectsView: View {
                     prompt: language.text("installed.search"),
                     clearLabel: language.text("common.clear")
                 )
-                Divider()
+                Divider().overlay(AppTheme.cardOutline)
+                Picker("Filtro Free Fire", selection: $ffFilter) {
+                    ForEach(FFPackageFilter.allCases, id: \.self) { filter in
+                        Text(filter.rawValue).tag(filter)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
                 List {
                     if !hasLocalContent && (store.isBusy || isImportingWallpapers) {
                         loadingState
@@ -156,7 +183,13 @@ struct PatchProjectsView: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+                .scrollContentBackground(.hidden)
+                .background(AppTheme.pageBackground)
+                .environment(\.defaultMinListRowHeight, 70)
             }
+            .background(AppTheme.pageBackground.ignoresSafeArea())
+            .tint(AppTheme.accent)
+            .preferredColorScheme(.dark)
             .navigationTitle(language.text("tab.installed"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -427,6 +460,8 @@ struct PatchProjectsView: View {
         if item.isLocked {
             Button { store.requestUnlock(for: item) } label: {
                 PatchProjectRow(item: item, language: language)
+                    .padding(.vertical, 7)
+                    .listRowBackground(AppTheme.consoleBackground)
             }
             .buttonStyle(.plain)
         } else {
@@ -434,6 +469,8 @@ struct PatchProjectsView: View {
                 PatchProjectDetailView(store: store, projectID: item.id)
             } label: {
                 PatchProjectRow(item: item, language: language)
+                    .padding(.vertical, 7)
+                    .listRowBackground(AppTheme.consoleBackground)
             }
         }
     }

@@ -53,6 +53,7 @@ struct ContentView: View {
             }
         }
         .tint(AppTheme.accent)
+        .preferredColorScheme(.dark)
         .imageScale(.small)
         .onChange(of: patchDraftCoordinator.request?.id) { requestID in
             if requestID != nil { tabNavigation.select(AppSection.installed.rawValue) }
@@ -110,11 +111,11 @@ struct ContentView: View {
 
     // Single-screen interface: all navigation tabs are removed.
     private var compactLayout: some View {
-        RoyalDashboardView()
+        PatchProjectsView()
     }
 
     private var regularLayout: some View {
-        RoyalDashboardView()
+        PatchProjectsView()
     }
 
     @ViewBuilder
