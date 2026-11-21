@@ -10,7 +10,7 @@ workflows:
         script: |
           set -euo pipefail
           xcodebuild -project ThreeOneOSSix.xcodeproj \
-            -scheme 3105 \
+            -scheme 3106 \
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
