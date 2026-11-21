@@ -94,13 +94,6 @@ enum ContainerStore {
         guard (try? PatchPathValidator.canonicalBundleIdentifier(bundleID)) == bundleID else {
             return nil
         }
-        // The LaunchServices store pairs a bundle id with its data container
-        // even when MCM activation and the metadata plist are unavailable.
-        if let mapped = launchServicesSnapshot()?.containerPath(forBundleID: bundleID),
-           isApplicationContainerPath(mapped) {
-            log("patch: LaunchServices store resolved \(bundleID)")
-            return mapped
-        }
         var lookupError: NSString?
         if let path = MCMActivateContainerPath(2, bundleID, false, &lookupError),
            isApplicationContainerPath(path) {
@@ -109,19 +102,6 @@ enum ContainerStore {
         }
         let detail = lookupError.map(String.init) ?? "unavailable"
         log("patch: MHA-C2 could not resolve \(bundleID), detail=\(detail)")
-
-        // iOS 27.2: the container identifier xattr and the root-owned metadata
-        // plist are no longer readable. Ask containermanager for the map first.
-        if let mapped = worse_query_identifier_paths()[bundleID],
-           isApplicationContainerPath(mapped) {
-            log("patch: container index resolved \(bundleID)")
-            return mapped
-        }
-        if let reverse = worse_query_path_identifiers().first(where: { $0.value == bundleID })?.key,
-           isApplicationContainerPath(reverse) {
-            log("patch: reverse container index resolved \(bundleID)")
-            return reverse
-        }
 
         // Fallback for iOS builds where MCM refuses to hand out sandbox
         // tokens (e.g. iOS 18.1.x): scan the app-data root with the inode
