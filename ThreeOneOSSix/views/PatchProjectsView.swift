@@ -190,8 +190,9 @@ struct PatchProjectsView: View {
             .background(AppTheme.pageBackground.ignoresSafeArea())
             .tint(AppTheme.accent)
             .preferredColorScheme(.dark)
-            .navigationTitle(language.text("tab.installed"))
-            .navigationBarTitleDisplayMode(.inline)
+            // Hide the legacy Installed title and its plus/settings toolbar.
+            // The dashboard remains the app's entry screen.
+            .toolbar(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {

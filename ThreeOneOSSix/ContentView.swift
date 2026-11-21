@@ -89,33 +89,17 @@ struct ContentView: View {
                     .environment(\.appLanguage, language)
             }
         }
-        .overlay(alignment: .top) {
-            // Kernel devices need a ran-once-per-launch unlock. The banner is
-            // top-aligned so it reads before any list content, and only shows
-            // while the chain has not succeeded — a settled failure stays
-            // visible through the Unlock screen rather than nagging here.
-            if appState.needsUnlock {
-                NavigationLink {
-                    UnlockView()
-                } label: {
-                    UnlockBanner()
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 12)
-                .padding(.top, 6)
-            }
-        }
         .patchStorePresentation(patchStore)
         .repositoryStorePresentation(repositoryStore, patchStore: patchStore)
     }
 
     // Single-screen interface: all navigation tabs are removed.
     private var compactLayout: some View {
-        PatchProjectsView()
+        RoyalDashboardView()
     }
 
     private var regularLayout: some View {
-        PatchProjectsView()
+        RoyalDashboardView()
     }
 
     @ViewBuilder
