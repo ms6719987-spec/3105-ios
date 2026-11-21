@@ -7,6 +7,8 @@ struct RoyalDashboardView: View {
     @State private var workingIDs = Set<UUID>()
     @State private var actionError: String?
     @State private var actionSuccess: String?
+    @State private var diagnosticStage: String?
+    @State private var diagnosticResult: String?
 
     private let red = Color(red: 1, green: 0.23, blue: 0.27)
     private let panel = Color(red: 0.065, green: 0.005, blue: 0.012)
@@ -50,6 +52,7 @@ struct RoyalDashboardView: View {
                     VStack(spacing: 22) {
                         statusPanel
                         categoryPanel
+                        diagnosticPanel
                         launchPanel
                     }
                     .padding(.horizontal, 18)
@@ -215,6 +218,32 @@ struct RoyalDashboardView: View {
         .overlay(RoundedRectangle(cornerRadius: 28).stroke(outline, lineWidth: 1.2))
     }
 
+    @ViewBuilder
+    private var diagnosticPanel: some View {
+        if let stage = diagnosticStage {
+            HStack(spacing: 10) {
+                ProgressView().tint(red)
+                Text(stage).font(font(12)).foregroundStyle(.white)
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .background(panel, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(outline))
+        } else if let result = diagnosticResult {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("DIAGNÓSTICO DA ÚLTIMA OPERAÇÃO").font(font(12)).foregroundStyle(red)
+                Text(result).font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.white)
+                Button("Copiar diagnóstico") { UIPasteboard.general.string = result }
+                    .font(font(12)).foregroundStyle(red)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(panel, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(outline))
+        }
+    }
+
     private func isFileActive(_ item: PatchLibraryItem) -> Bool {
         DevicePatchService.latestReceipt(projectID: item.id) != nil
     }
@@ -226,12 +255,17 @@ struct RoyalDashboardView: View {
             return
         }
         workingIDs.insert(item.id)
+        diagnosticResult = nil
+        diagnosticStage = "Preparando operação…"
         let activeReceipt = DevicePatchService.latestReceipt(projectID: item.id)
         Task.detached(priority: .userInitiated) {
             let started = ProcessInfo.processInfo.systemUptime
+            var stages: [String] = []
             func report(_ stage: String) {
                 let elapsed = ProcessInfo.processInfo.systemUptime - started
+                stages.append(String(format: "%.2f s — %@", elapsed, stage))
                 NSLog("[Injetor] %@ em %.3f s (%@)", stage, elapsed, item.id.uuidString)
+                Task { @MainActor in diagnosticStage = stage }
             }
             do {
                 if let receipt = activeReceipt {
@@ -268,6 +302,8 @@ struct RoyalDashboardView: View {
                 }
                 await MainActor.run {
                     workingIDs.remove(item.id)
+                    diagnosticStage = nil
+                    diagnosticResult = stages.joined(separator: "\n")
                     store.reload()
                     actionSuccess = activeReceipt == nil
                         ? "Arquivo aplicado com sucesso!"
@@ -277,6 +313,8 @@ struct RoyalDashboardView: View {
                 report("Operação falhou: \(error.localizedDescription)")
                 await MainActor.run {
                     workingIDs.remove(item.id)
+                    diagnosticStage = nil
+                    diagnosticResult = stages.joined(separator: "\n")
                     actionError = error.localizedDescription
                 }
             }
