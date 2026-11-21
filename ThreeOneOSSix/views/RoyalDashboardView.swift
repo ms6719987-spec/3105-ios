@@ -27,8 +27,14 @@ struct RoyalDashboardView: View {
     private var listedFiles: [PatchLibraryItem] {
         var seen = Set<String>()
         return store.items.filter { item in
-            let raw = (item.project?.name ?? item.packageURL.deletingPathExtension().lastPathComponent).uppercased()
-            let category = raw.contains("FFMAX") || raw.contains("FF MAX") ? "FF MAX" : raw.contains("AP") ? "AP" : "FF NORMAL"
+            // A categoria original está no nome do arquivo .3105; o nome interno
+            // do projeto pode não conter FFMAX após a importação.
+            let filename = item.packageURL.deletingPathExtension().lastPathComponent.uppercased()
+            let projectName = (item.project?.name ?? "").uppercased()
+            let isMax = filename.contains("FFMAX") || filename.contains("FF MAX")
+                || projectName.contains("FFMAX") || projectName.contains("FF MAX")
+            let isAP = filename.hasPrefix("AP ") || projectName.hasPrefix("AP ")
+            let category = isMax ? "FF MAX" : isAP ? "AP" : "FF NORMAL"
             let key = displayName(item).folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
                 .replacingOccurrences(of: "[^a-z0-9]", with: "", options: .regularExpression)
             return category == selectedCategory && seen.insert(key).inserted
@@ -127,7 +133,7 @@ struct RoyalDashboardView: View {
                 .overlay(RoundedRectangle(cornerRadius: 15).stroke(tint.opacity(0.35)))
             Text(label).foregroundStyle(.gray)
             Spacer(minLength: 4)
-            Text(value).font(font(15)).foregroundStyle(.white)
+            Text(value).font(font(15)).foregroundStyle(value == "SUPORTADO" ? Color.green : Color.white)
                 .lineLimit(1).minimumScaleFactor(0.7)
         }
     }
@@ -220,7 +226,21 @@ struct RoyalDashboardView: View {
                     guard let baseProject = item.project else {
                         throw NSError(domain: "Injetor", code: 1, userInfo: [NSLocalizedDescriptionKey: "Arquivo indisponível."])
                     }
-                    let project = item.summary.schemaVersion >= 2 && item.canInspectContents
+                    // Pacotes importados sem workspace editado podem ser aplicados
+                    // diretamente. Evita criar e copiar todos os arquivos para um
+                    // workspace apenas para ativar o pacote pela primeira vez.
+                    let hasWorkspace: Bool
+                    if item.summary.schemaVersion >= 2 && item.canInspectContents,
+                       let patchesRoot = try? PatchWorkspaceService.patchesRootURL() {
+                        hasWorkspace = PatchWorkspaceService.workspaceURL(
+                            projectID: baseProject.id,
+                            patchesRoot: patchesRoot,
+                            fileManager: .default
+                        ) != nil
+                    } else {
+                        hasWorkspace = false
+                    }
+                    let project = hasWorkspace
                         ? try PatchProjectLibrary.synchronizeWorkspace(item: item)
                         : baseProject
                     _ = try DevicePatchService.apply(project: project)
