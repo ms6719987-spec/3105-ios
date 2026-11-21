@@ -326,6 +326,16 @@ enum PatchProjectLibrary {
             workspaceURL: workspace,
             fileManager: fileManager
         )
+        // Avoid re-encoding and rewriting the package when workspace content is unchanged.
+        // The snapshot has already validated the workspace and its contents.
+        let unchanged = project.name == baseProject.name
+            && project.bundleIdentifiers == baseProject.bundleIdentifiers
+            && Set(project.directories) == Set(baseProject.directories)
+            && Set(project.rules) == Set(baseProject.rules)
+        if unchanged {
+            return baseProject
+        }
+
         let original = try readPackage(at: item.packageURL)
         let updated = try PatchPackageCodec.update(
             original,
