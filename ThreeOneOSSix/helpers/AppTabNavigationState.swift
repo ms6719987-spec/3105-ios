@@ -110,7 +110,7 @@ struct FeatureVisibility: Equatable {
         // Fixed product shape: 功能 / 文件 / 搜索 / 清理 / 备份. Wallpapers,
         // repository and patch entry points live inside the feature hub
         // instead of the tab bar.
-        [.home, .files, .search, .cleaner, .backup]
+        [.installed, .home, .files, .search, .cleaner, .backup]
     }
 
     func isVisible(_ section: AppSection) -> Bool {
@@ -123,7 +123,7 @@ struct AppTabNavigationState: Equatable {
     private(set) var filesTabs: FilesTabSession
 
     init(
-        selectedTab: Int = 0,
+        selectedTab: Int = AppSection.installed.rawValue,
         filesNavigationPath: [FileBrowserDestination] = []
     ) {
         self.selectedTab = selectedTab
