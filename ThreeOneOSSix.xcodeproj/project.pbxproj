@@ -127,11 +127,9 @@
 		3105L201 /* PackageRepositoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105L101; };
 		3105L202 /* RepositoryMarketplaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105L102; };
 		3105L203 /* RepositoryHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105L103; };
-		3105L204 /* RepositorySourcesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105L104; };
 		3105L205 /* RepositoryPresentationSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105L105; };
 		3106B200 /* BackupCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3106B100; };
 		3106B201 /* BackupCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3106B101; };
-		3106H201 /* FeatureHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3106H101; };
 		3106P200 /* Pathleak.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3106P100; };
 		3106P201 /* ScanCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3106P101; };
 		3106T200 /* TaskCancellation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3106T100; };
@@ -324,7 +322,6 @@
 		3105L101 /* PackageRepositoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackageRepositoryStore.swift; sourceTree = "<group>"; };
 		3105L102 /* RepositoryMarketplaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryMarketplaceView.swift; sourceTree = "<group>"; };
 		3105L103 /* RepositoryHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryHomeView.swift; sourceTree = "<group>"; };
-		3105L104 /* RepositorySourcesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositorySourcesView.swift; sourceTree = "<group>"; };
 		3105L105 /* RepositoryPresentationSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryPresentationSupport.swift; sourceTree = "<group>"; };
 		3105A121 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		3105A122 /* vi */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = vi; path = vi.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -332,7 +329,6 @@
 			3105C124 /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/Localizable.strings; sourceTree = "<group>"; };
 		3106B100 /* BackupCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupCenter.swift; sourceTree = "<group>"; };
 		3106B101 /* BackupCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupCenterView.swift; sourceTree = "<group>"; };
-		3106H101 /* FeatureHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureHubView.swift; sourceTree = "<group>"; };
 		3106P100 /* Pathleak.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pathleak.swift; sourceTree = "<group>"; };
 		3106P101 /* ScanCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanCoordinator.swift; sourceTree = "<group>"; };
 		3106T100 /* TaskCancellation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskCancellation.swift; sourceTree = "<group>"; };
@@ -468,9 +464,7 @@
 				3105F108 /* OnboardingView.swift */,
 				3105L102 /* RepositoryMarketplaceView.swift */,
 				3105L103 /* RepositoryHomeView.swift */,
-				3105L104 /* RepositorySourcesView.swift */,
 				3106B101 /* BackupCenterView.swift */,
-				3106H101 /* FeatureHubView.swift */,
 				3106R101 /* AcknowledgementsView.swift */,
 				3106M101 /* MobileGestaltEditorView.swift */,
 				3106M103 /* KeypadThemeView.swift */,
@@ -788,11 +782,9 @@
 				3105L201,
 				3105L202,
 				3105L203,
-				3105L204,
 				3105L205,
 				3106B200,
 				3106B201,
-				3106H201,
 				3106P200,
 				3106P201,
 				3106R200,
