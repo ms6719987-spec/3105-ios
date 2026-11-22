@@ -39,7 +39,7 @@ struct RoyalDashboardView: View {
             let category = isMax ? "FF MAX" : isAP ? "AP" : "FF NORMAL"
             let key = displayName(item).folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
                 .replacingOccurrences(of: "[^a-z0-9]", with: "", options: .regularExpression)
-            return (selectedCategory == "HS VIPS" || category == selectedCategory) && seen.insert(key).inserted
+            return (category == selectedCategory) && seen.insert(key).inserted
         }.sorted { displayName($0).localizedStandardCompare(displayName($1)) == .orderedAscending }
     }
 
@@ -311,26 +311,25 @@ struct RoyalDashboardView: View {
     }
 
     private var hsVipsBottomButton: some View {
-        Button {
-            selectedCategory = "HS VIPS"
-        } label: {
-            HStack(spacing: 10) {
+        VStack(spacing: 12) {
                 Image(systemName: "flame.fill")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.system(size: 36, weight: .bold))
                 Text("HS VIPS")
-                    .font(font(15))
-                    .tracking(1)
+                    .font(font(25))
+                    .tracking(1.2)
             }
-            .foregroundStyle(selectedCategory == "HS VIPS" ? .white : red)
+            .foregroundStyle(red)
             .frame(maxWidth: .infinity)
-            .frame(height: 56)
-            .background(selectedCategory == "HS VIPS" ? red : panel,
-                        in: RoundedRectangle(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 20)
-                .stroke(outline, lineWidth: 1.3))
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 72)
+            .frame(height: 148)
+            .background(
+                RoundedRectangle(cornerRadius: 78)
+                    .fill(Color(red: 0.24, green: 0.19, blue: 0.21))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 78)
+                    .stroke(Color(red: 0.34, green: 0.26, blue: 0.29), lineWidth: 4)
+            )
+        .padding(.horizontal, 64)
         .padding(.bottom, 20)
     }
 

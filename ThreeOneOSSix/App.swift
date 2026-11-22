@@ -10,12 +10,10 @@ struct ThreeOneOSSixApp: App {
     @StateObject private var repositoryStore = PackageRepositoryStore()
     @StateObject private var migrationTaskCenter = MigrationTaskCenter()
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.english.rawValue
-    @State private var showOnboarding = OnboardingStore.shouldShow()
     @State private var showAttribution = false
     @State private var updateOffer: AppUpdateChecker.Offer?
     @State private var configImportError: String?
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init() {
         // Seed the UI language before the first view body runs. `@AppStorage`
@@ -95,29 +93,9 @@ struct ThreeOneOSSixApp: App {
                     .environmentObject(migrationTaskCenter)
                     .environment(\.appLanguage, language)
                     .environment(\.locale, language.locale)
-                    .opacity(showOnboarding ? 0 : 1)
-                    .allowsHitTesting(!showOnboarding)
 
-                if showOnboarding {
-                    OnboardingView {
-                        OnboardingStore.markCompleted()
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24)) {
-                            showOnboarding = false
-                        }
-                        appState.detectSupport()
-                        checkForUpdate()
-                    }
-                    .environment(\.appLanguage, language)
-                    .environment(\.locale, language.locale)
-                    .transition(
-                        reduceMotion
-                            ? .opacity
-                            : .opacity.combined(with: .scale(scale: 0.98))
-                    )
-                    .zIndex(1)
-                }
             }
-            .displayIdentityAttribution(isPresented: $showAttribution, enabled: !showOnboarding)
+            .displayIdentityAttribution(isPresented: $showAttribution, enabled: true)
             .sheet(isPresented: $showAttribution) {
                 DisplayAttributionSheet()
             }
@@ -145,15 +123,13 @@ struct ThreeOneOSSixApp: App {
                 )
             }
             .onAppear {
-                if !showOnboarding {
-                    appState.detectSupport()
-                    checkForUpdate()
-                }
+                appState.detectSupport()
+                checkForUpdate()
                 migrationTaskCenter.refreshPendingResumes()
                 importSharedConfigPackages()
             }
             .onChange(of: scenePhase) { phase in
-                guard phase == .active, !showOnboarding else { return }
+                guard phase == .active else { return }
                 appState.detectSupport()
                 // 3.2.4: also probe for updates on foreground switches —
                 // the cold-start check alone misses releases published
